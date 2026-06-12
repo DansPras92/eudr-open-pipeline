@@ -1,0 +1,8 @@
+.env
+docker-compose.override.yml
+logs/
+data/
+*.tif
+*.tiff
+.venv/
+__pycache__/

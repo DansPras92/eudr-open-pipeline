@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: eudr #postgis image auto-enable PostGIS
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d eudr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # no ports, exposed only in docker-compose.override.yml (gitignored)
+  airflow:
+    image: ${AIRFLOW_IMAGE:-apache/airflow:3.0.2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: standalone # all airflow services in one container
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+      #!!Local dev only, need to disable if used in reachable host.
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data #AOI rasters, plot, scratch
+    user: "${AIRFLOW_UID:-50000}:0"
+    # port 8080 exposed only in override file 
+
+volumes:
+  pgdata:
+
