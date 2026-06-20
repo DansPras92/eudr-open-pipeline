@@ -23,7 +23,7 @@ function App() {
   const [selected, setSelected] = useState<PlotDetail | null>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/plots")
+    fetch("/api/plots")
       .then((res) => res.json())
       .then((data: FeatureCollection) => setPlots(data))
       .catch((err) => console.error("Failed to load plots:", err));
@@ -38,7 +38,7 @@ function App() {
       return;
     }
     const plotId = feature.properties?.plot_id;
-    fetch(`http://localhost:8000/api/plots/${plotId}`)
+    fetch(`/api/plots/${plotId}`)
       .then((res) => res.json())
       .then((data: PlotDetail) => setSelected(data))
       .catch((err) => console.error("Failed to load detail:", err));

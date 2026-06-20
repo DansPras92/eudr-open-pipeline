@@ -54,6 +54,26 @@ services:
     working_dir: /dbt
     profiles: ["tools"]                  # see note below
     command: ["sleep", "infinity"]       # stay alive so Airflow can exec into it
+
+  api:
+    build: ./api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      API_DB_HOST: postgres
+      API_DB_PORT: "5432"
+      API_DB_NAME: eudr
+      API_DB_USER: eudr_readonly
+      READONLY_DB_PASSWORD: ${READONLY_DB_PASSWORD}
+    ports:
+      - "8000:8000"
+  dashboard:
+    build: ./dashboard
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
   
 
 volumes:

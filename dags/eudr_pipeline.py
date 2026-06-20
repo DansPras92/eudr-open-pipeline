@@ -42,66 +42,25 @@ def eudr_pipeline():
             "baseline" : clearest("2020-05-01","2020-07-31"),
             "current": clearest("2025-05-01","2025-07-31"),
         }
+    
     @task
     def compute_ndvi(scenes: dict) -> int:
-        """Read NDVI per plot for both scenes, upsert to ndvi_observations.
-        Returns row count written."""
-        import numpy as np
+        """Read NDVI per plot for both scenes, upsert to ndvi_observations."""
         import geopandas as gpd
-        import rasterio
-        from rasterio.mask import mask
-        import pystac_client
-        import planetary_computer
         from airflow.providers.postgres.hooks.postgres import PostgresHook
         from psycopg2.extras import execute_values
+        from eudr.ndvi import open_scenes, ndvi_records
         import logging
         log = logging.getLogger("airflow.task")
 
-        catalog = pystac_client.Client.open(
-            "https://planetarycomputer.microsoft.com/api/stac/v1",
-            modifier=planetary_computer.sign_inplace,
-        )
-
-        def item_by_id(scene_id):
-            return next(catalog.search(
-                collections=["sentinel-2-l2a"],
-                ids=[scene_id],
-            ).items())
-
-        # re-open scenes, keyed by their ACTUAL date (no hardcoded labels)
-        items = {}
-        for role in ("baseline", "current"):
-            item = item_by_id(scenes[role])
-            items[item.datetime.date().isoformat()] = item
+        items = open_scenes(scenes)                  # logic in src/
         log.info("Re-opened scenes: %s", list(items.keys()))
 
         hook = PostgresHook(postgres_conn_id="eudr_postgres")
         conn = hook.get_conn()
         plots = gpd.read_postgis("SELECT plot_id, geom FROM plots", conn, geom_col="geom")
 
-        def read_band(href, geom):
-            with rasterio.open(href) as src:
-                out, _ = mask(src, geom, crop=True, filled=False)
-            return out[0]
-
-        def compute_plot_ndvi(item, plot_gdf):
-            red_href, nir_href = item.assets["B04"].href, item.assets["B08"].href
-            with rasterio.open(red_href) as src:
-                plot_utm = plot_gdf.to_crs(src.crs)
-            red = read_band(red_href, plot_utm.geometry).astype("float32")
-            nir = read_band(nir_href, plot_utm.geometry).astype("float32")
-            if item.properties.get("s2:processing_baseline", "00.00") >= "04.00":
-                red -= 1000; nir -= 1000
-            return (nir - red) / (nir + red)
-
-        records = []
-        for i in range(len(plots)):
-            plot_gdf = plots.iloc[[i]]
-            plot_id = plot_gdf.iloc[0]["plot_id"]
-            for obs_date, item in items.items():
-                ndvi = compute_plot_ndvi(item, plot_gdf)
-                records.append((plot_id, obs_date, float(np.nanmean(ndvi)), item.id))
-        
+        records = ndvi_records(items, plots)         # logic in src/
         log.info("Computed NDVI for %d plot-date rows", len(records))
 
         with conn, conn.cursor() as cur:
