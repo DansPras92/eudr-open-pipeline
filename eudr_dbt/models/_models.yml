@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: plot_risk_status
+    columns:
+      - name: plot_id
+        tests:
+          - unique          # one row per plot
+          - not_null
+      - name: status
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['compliant', 'non-compliant', 'needs-review']
+      - name: status_color
+        tests:
+          - not_null        # every status must map to a colour

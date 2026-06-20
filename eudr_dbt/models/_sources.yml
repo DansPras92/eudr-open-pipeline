@@ -1,0 +1,10 @@
+# models/_sources.yml — declares the raw pipeline tables dbt reads from
+version: 2
+
+sources:
+  - name: eudr                    # the group name used in source('eudr', ...)
+    schema: public                # where your pipeline writes raw tables
+    tables:
+      - name: plot_compliance
+      - name: ndvi_observations
+      - name: plot_loss_results

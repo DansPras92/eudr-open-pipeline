@@ -140,8 +140,8 @@ This is a learning/portfolio project, built in milestones.
       reproducible cold-start
 - [x] **M1 — Loss detection:** synthetic plots → PostGIS; Hansen windowed reads;
       per-plot post-2020 loss flagging; results self-validated against eyeball labels
-- [ ] **M2 — Sentinel-2 NDVI:** STAC queries, windowed COG reads, NDVI time series
+- [x] **M2 — Sentinel-2 NDVI:** STAC queries, windowed COG reads, NDVI time series
       (2020 baseline vs current) per plot
-- [ ] **M3 — Orchestration:** single Airflow DAG, idempotent tasks, retries/logging
+- [x] **M3 — Orchestration:** single Airflow DAG, idempotent tasks, retries/logging
 - [ ] **M4 — Reporting:** dbt models + React/MapLibre map dashboard
 - [ ] **M5 — Write-up:** architecture notes, design-decision log

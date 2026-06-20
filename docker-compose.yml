@@ -1,3 +1,23 @@
+x-airflow-common: &airflow-common
+  build: .
+  depends_on:
+    postgres:
+      condition: service_healthy
+  command: standalone # all airflow services in one container
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+    #!!Local dev only, need to disable if used in reachable host.
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    AIRFLOW_CONN_EUDR_POSTGRES: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/eudr"
+    PYTHONPATH: /opt/airflow/src
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./data:/opt/airflow/data #AOI rasters, plot, scratch
+    - ./src:/opt/airflow/src
+  user: "${AIRFLOW_UID:-50000}:0"
+  # port 8080 exposed only in override file 
 services:
   postgres:
     image: postgis/postgis:16-3.4
@@ -14,23 +34,27 @@ services:
       timeout: 5s
       retries: 10
     # no ports, exposed only in docker-compose.override.yml (gitignored)
+  
   airflow:
-    image: ${AIRFLOW_IMAGE:-apache/airflow:3.0.2}
+    <<: *airflow-common
+
+  dbt:
+    build:
+      context: .
+      dockerfile: Dockerfile.dbt
     depends_on:
       postgres:
         condition: service_healthy
-    command: standalone # all airflow services in one container
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
-      #!!Local dev only, need to disable if used in reachable host.
-      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+      DBT_POSTGRES_HOST: postgres        # Docker-network host
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
-      - ./data:/opt/airflow/data #AOI rasters, plot, scratch
-    user: "${AIRFLOW_UID:-50000}:0"
-    # port 8080 exposed only in override file 
+      - ./eudr_dbt:/dbt
+    working_dir: /dbt
+    profiles: ["tools"]                  # see note below
+    command: ["sleep", "infinity"]       # stay alive so Airflow can exec into it
+  
 
 volumes:
   pgdata:
