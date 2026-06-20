@@ -15,6 +15,57 @@ from datetime import datetime, timedelta
 def eudr_pipeline():
 
     @task
+    def detect_loss() -> int:
+        """Per-plot Hansen post-2020 loss → upsert to plot_loss_results."""
+        import geopandas as gpd
+        from airflow.providers.postgres.hooks.postgres import PostgresHook
+        from psycopg2.extras import execute_values
+        from eudr.loss import loss_records
+        import logging
+        log = logging.getLogger("airflow.task")
+
+        # raster lives in the mounted ./data dir → /opt/airflow/data inside container
+        hansen_path = "/opt/airflow/data/hansen/Hansen_GFC-2024-v1.12_lossyear_00N_110E.tif"
+
+        hook = PostgresHook(postgres_conn_id="eudr_postgres")
+        conn = hook.get_conn()
+        plots = gpd.read_postgis(
+            "SELECT plot_id, expected_status, geom FROM plots",
+            conn, geom_col="geom",
+        )
+
+        records = loss_records(hansen_path, plots)     # pure logic in src/
+        log.info("Computed loss for %d plots", len(records))
+
+        with conn, conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS plot_loss_results (
+                    plot_id text PRIMARY KEY,
+                    expected_status text,
+                    total_loss_px integer,
+                    post2020_loss_px integer,
+                    post2020_loss_ha real,
+                    flagged boolean
+                );
+            """)
+            execute_values(cur, """
+                INSERT INTO plot_loss_results
+                    (plot_id, expected_status, total_loss_px,
+                     post2020_loss_px, post2020_loss_ha, flagged)
+                VALUES %s
+                ON CONFLICT (plot_id) DO UPDATE
+                  SET expected_status  = EXCLUDED.expected_status,
+                      total_loss_px    = EXCLUDED.total_loss_px,
+                      post2020_loss_px = EXCLUDED.post2020_loss_px,
+                      post2020_loss_ha = EXCLUDED.post2020_loss_ha,
+                      flagged          = EXCLUDED.flagged;
+            """, records)
+
+        conn.close()
+        log.info("Upserted %d rows to plot_loss_results", len(records))
+        return len(records)
+
+    @task
     def fetch_scenes() -> dict:
         """Find baseline and current Sentinel-2 scene IDs over the AOI"""
         import pystac_client
@@ -129,7 +180,8 @@ def eudr_pipeline():
     
     scenes = fetch_scenes()
     ndvi = compute_ndvi(scenes)
+    loss = detect_loss()
     cross = cross_check_hansen()
-    ndvi >> cross
+    [ndvi, loss] >> cross
 
 eudr_pipeline()
