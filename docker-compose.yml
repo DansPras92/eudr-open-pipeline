@@ -14,7 +14,6 @@ x-airflow-common: &airflow-common
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
-    - ./data:/opt/airflow/data #AOI rasters, plot, scratch
     - ./src:/opt/airflow/src
   user: "${AIRFLOW_UID:-50000}:0"
   # port 8080 exposed only in override file 

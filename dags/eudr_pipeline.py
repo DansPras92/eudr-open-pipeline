@@ -23,9 +23,35 @@ def eudr_pipeline():
         from eudr.loss import loss_records
         import logging
         log = logging.getLogger("airflow.task")
+        import os, subprocess, contextlib
 
-        # raster lives in the mounted ./data dir → /opt/airflow/data inside container
-        hansen_path = "/opt/airflow/data/hansen/Hansen_GFC-2024-v1.12_lossyear_00N_110E.tif"
+        @contextlib.contextmanager
+        def r2_credential(vault_path="/opt/airflow/secrets.enc.yaml"):
+            """decrypt vault > set GDAL s3 env vars for the R2 read only then wipe"""
+            raw = subprocess.run(
+                ["sops", "-d", vault_path],
+                capture_output=True, text=True, check=True,
+            ).stdout
+            vault = {
+                k.strip(): v.strip().strip('""')
+                for k, v in (l.split(":",1) for l in raw.splitlines() if ":" in l and not l.startswith(" "))
+            }
+            gdal_env = {
+                "AWS_ACCESS_KEY_ID": vault["R2_ACCESS_KEY_ID"],
+                "AWS_SECRET_ACCESS_KEY": vault["R2_SECRET_ACCESS_KEY"],
+                "AWS_S3_ENDPOINT": vault["R2_ENDPOINT"].replace("https://", "").replace("http//",""),
+                "AWS_VIRTUAL_HOSTING": "FALSE",
+                "AWS_HTTPS": "YES",
+            }
+            os.environ.update(gdal_env)
+            try:
+                yield
+            finally:
+                for k in gdal_env:
+                    os.environ.pop(k, None)
+
+        #stream from R2 (private bucket)
+        hansen_path = "/vsis3/eudr-data/hansen/Hansen_GFC-2024-v1.12_lossyear_00N_110E.tif"
 
         hook = PostgresHook(postgres_conn_id="eudr_postgres")
         conn = hook.get_conn()
@@ -34,7 +60,8 @@ def eudr_pipeline():
             conn, geom_col="geom",
         )
 
-        records = loss_records(hansen_path, plots)     # pure logic in src/
+        with r2_credential():
+            records = loss_records(hansen_path, plots)     # pure logic in src/
         log.info("Computed loss for %d plots", len(records))
 
         with conn, conn.cursor() as cur:
